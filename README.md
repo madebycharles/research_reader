@@ -2,7 +2,9 @@
 
 A mobile-first web app that reads academic papers aloud using a cloned voice, built for passive listening during moments where you want to engage your audio-sensory cognitive channels even while occupied with other task e.g long commutes or during boring night shifts you do to earn enough to pay rent while being a broke researcher (Story of my life).
 
-Common "read aloud" features on browsers are just text readers. No context, voices are very robotic, I am silly enough to enjoy listening to my own voice, and that of my girlfriend. Also, screen readers will basically try to read everything - even headers and footers! No context whatsoever that it is a research paper. Commercial readers are also EXPENSIVE! 
+Common "read aloud" features on browsers are just text readers. They basically try to read everything including headers and footers! No context whatsoever that it is a research paper.
+
+Voices are also very robotic. I am silly enough to enjoy listening to my own voice, and that of my lovely girlfriend, whose support makes listening to her voice the closest thing to keeping me sane. 
 
 So I built this with the help of ClaudeCode. You might find it helpful.
 
