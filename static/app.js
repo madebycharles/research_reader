@@ -340,6 +340,9 @@ function renderPrepareUI(paperId, prepEl, s) {
 
   if (s.status === 'running') {
     const pct = s.total > 0 ? Math.round(s.done / s.total * 100) : 0;
+    const bellHtml = ('Notification' in window && Notification.permission === 'default')
+      ? `<button class="prep-notify-btn" title="Enable notifications">🔔</button>`
+      : '';
     prepEl.innerHTML = `
       <div class="prep-progress-wrap">
         <span class="prep-label">Preparing</span>
@@ -347,7 +350,19 @@ function renderPrepareUI(paperId, prepEl, s) {
           <div class="prep-bar-fill" style="width:${pct}%"></div>
         </div>
         <span class="prep-count">${s.done} / ${s.total} ¶</span>
+        ${bellHtml}
       </div>`;
+    if (bellHtml) {
+      prepEl.querySelector('.prep-notify-btn').addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const perm = await Notification.requestPermission();
+        if (perm === 'granted') {
+          notifyOnComplete.add(paperId);
+          e.target.remove();
+          toast('Notifications enabled — you\'ll be notified when ready.', 'success', 3000);
+        }
+      });
+    }
     return;
   }
 
@@ -387,9 +402,8 @@ async function checkInitialPrepareStatus(paperId, prepEl, title) {
     renderPrepareUI(paperId, prepEl, s);
     // Resume polling if server says it's still running (e.g. after page refresh)
     if (s.status === 'running' && !activePreparePolls.has(paperId)) {
-      // Register for notification — job was already running when page loaded
-      requestNotifyPermission();
-      notifyOnComplete.add(paperId);
+      // notifyOnComplete is added when user taps the 🔔 bell in the progress bar
+      // (can't request notification permission without a user gesture on mobile)
       const interval = setInterval(async () => {
         try {
           const st = await api.get(`/api/papers/${paperId}/prepare/status?voice_id=${defaultVoiceId}`);

@@ -307,6 +307,17 @@ a {
   white-space: nowrap;
   flex-shrink: 0;
 }
+.prep-notify-btn {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0.7;
+  flex-shrink: 0;
+  line-height: 1;
+}
+.prep-notify-btn:active { opacity: 1; }
 
 /* ── Empty State ─────────────────────────────────────────────── */
 .empty-state {
