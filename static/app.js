@@ -340,8 +340,12 @@ function renderPrepareUI(paperId, prepEl, s) {
 
   if (s.status === 'running') {
     const pct = s.total > 0 ? Math.round(s.done / s.total * 100) : 0;
-    const bellHtml = ('Notification' in window && Notification.permission === 'default')
-      ? `<button class="prep-notify-btn" title="Enable notifications">🔔</button>`
+    const notifSupported = 'Notification' in window;
+    const notifGranted   = notifSupported && Notification.permission === 'granted';
+    // Show bell for any state where notifications aren't already active
+    const showBell = !notifGranted;
+    const bellHtml = showBell
+      ? `<button class="prep-notify-btn" title="Enable ready notification">🔔</button>`
       : '';
     prepEl.innerHTML = `
       <div class="prep-progress-wrap">
@@ -352,14 +356,24 @@ function renderPrepareUI(paperId, prepEl, s) {
         <span class="prep-count">${s.done} / ${s.total} ¶</span>
         ${bellHtml}
       </div>`;
-    if (bellHtml) {
+    if (showBell) {
       prepEl.querySelector('.prep-notify-btn').addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (!notifSupported) {
+          toast('On iPhone: tap Share → Add to Home Screen, then reopen the app.', '', 6000);
+          return;
+        }
+        if (Notification.permission === 'denied') {
+          toast('Notifications blocked — go to Settings → [App] → Notifications to enable.', '', 6000);
+          return;
+        }
         const perm = await Notification.requestPermission();
         if (perm === 'granted') {
           notifyOnComplete.add(paperId);
           e.target.remove();
-          toast('Notifications enabled — you\'ll be notified when ready.', 'success', 3000);
+          toast('You\'ll be notified when ready.', 'success', 3000);
+        } else {
+          toast('Notifications blocked — go to Settings → [App] → Notifications to enable.', '', 5000);
         }
       });
     }
@@ -402,8 +416,10 @@ async function checkInitialPrepareStatus(paperId, prepEl, title) {
     renderPrepareUI(paperId, prepEl, s);
     // Resume polling if server says it's still running (e.g. after page refresh)
     if (s.status === 'running' && !activePreparePolls.has(paperId)) {
-      // notifyOnComplete is added when user taps the 🔔 bell in the progress bar
-      // (can't request notification permission without a user gesture on mobile)
+      // If permission already granted (e.g. Chrome), register silently — no gesture needed
+      if ('Notification' in window && Notification.permission === 'granted') {
+        notifyOnComplete.add(paperId);
+      }
       const interval = setInterval(async () => {
         try {
           const st = await api.get(`/api/papers/${paperId}/prepare/status?voice_id=${defaultVoiceId}`);
