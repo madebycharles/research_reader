@@ -1,0 +1,21 @@
+# Research Reader dependencies
+# NOTE: Install PyTorch FIRST (see setup.bat for instructions)
+# then run: pip install -r requirements.txt
+
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+python-multipart>=0.0.9
+PyMuPDF>=1.23.0
+aiofiles>=23.2.1
+pydantic>=2.5.0
+
+# spaCy must be pinned <3.8 before TTS is installed.
+# spaCy 3.8+ requires thinc>=8.3.12 which does not exist on PyPI
+# (thinc jumped from 8.3.0 → 8.4.0 with no patch releases).
+spacy>=3.7.0,<3.8.0
+
+# transformers 4.40+ removed BeamSearchScorer from the top-level namespace,
+# which breaks Coqui TTS XTTS v2.
+transformers>=4.33.0,<4.40.0
+
+TTS>=0.22.0

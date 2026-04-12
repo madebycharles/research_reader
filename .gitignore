@@ -1,0 +1,36 @@
+# Virtual environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Coqui TTS model cache (Windows — stored outside project by default)
+# C:\Users\<you>\AppData\Local\tts\
+# Nothing to ignore here, but noted for reference.
+
+# User data — papers, voices, generated audio, database, logs
+data/papers/
+data/voices/
+data/audio/
+data/reader.db
+data/reader.log
+
+# Keep the data directory itself so the folder structure exists on clone
+!data/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Env files
+.env
+*.env

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Research Reader</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+  <!-- ═══════════════════════════════════════════════════
+       LIBRARY SCREEN
+  ════════════════════════════════════════════════════ -->
+  <div id="screen-library" class="screen active">
+    <header class="app-header">
+      <span class="app-logo">📖</span>
+      <h1 class="app-title">Research Reader</h1>
+      <button class="btn-icon" id="btn-open-log" title="View Log">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="16" y1="13" x2="8" y2="13" />
+          <line x1="16" y1="17" x2="8" y2="17" />
+        </svg>
+      </button>
+      <button class="btn-icon" id="btn-open-voices" title="Manage Voices">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2a3 3 0 0 1 3 3v7a3 3 0 0 1-6 0V5a3 3 0 0 1 3-3z" />
+          <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+          <line x1="12" y1="19" x2="12" y2="23" />
+          <line x1="8" y1="23" x2="16" y2="23" />
+        </svg>
+      </button>
+    </header>
+
+    <div class="screen-content">
+      <div class="section-label">Your Papers</div>
+      <div id="papers-list" class="card-list"></div>
+      <div id="papers-empty" class="empty-state hidden">
+        <div class="empty-icon">📄</div>
+        <p>No papers yet.</p>
+        <p class="empty-sub">Upload a PDF to start listening.</p>
+      </div>
+    </div>
+
+    <label class="fab" for="upload-pdf-input" title="Upload PDF">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19" />
+        <line x1="5" y1="12" x2="19" y2="12" />
+      </svg>
+    </label>
+    <input type="file" id="upload-pdf-input" accept=".pdf" hidden />
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════
+       READER SCREEN
+  ════════════════════════════════════════════════════ -->
+  <div id="screen-reader" class="screen hidden">
+    <header class="app-header">
+      <button class="btn-icon" id="btn-back">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="15 18 9 12 15 6" />
+        </svg>
+      </button>
+      <h1 class="app-title truncate" id="reader-title">Paper</h1>
+      <div style="width:40px"></div>
+    </header>
+
+    <div class="screen-content reader-content" id="reader-content">
+      <!-- Voice bar -->
+      <div class="voice-bar">
+        <label class="voice-label">Voice</label>
+        <select id="voice-select" class="voice-select">
+          <option value="">— select voice —</option>
+        </select>
+      </div>
+
+      <!-- Sections list -->
+      <div class="section-label">Sections</div>
+      <div id="sections-list" class="sections-list"></div>
+    </div>
+
+    <!-- Player bar -->
+    <div class="player-bar">
+      <div class="player-meta">
+        <span id="player-section-label" class="player-section-name">—</span>
+        <span id="player-status" class="player-status-badge">Ready</span>
+      </div>
+
+      <div class="player-controls">
+        <button class="ctrl-btn" id="btn-prev" title="Previous paragraph">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="19 20 9 12 19 4 19 20" />
+            <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2" />
+          </svg>
+        </button>
+        <button class="ctrl-btn ctrl-play" id="btn-play" title="Play / Pause">
+          <svg id="icon-play" viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <svg id="icon-pause" viewBox="0 0 24 24" fill="currentColor" class="hidden">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+        <button class="ctrl-btn" id="btn-next" title="Next paragraph">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <polygon points="5 4 15 12 5 20 5 4" />
+            <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="speed-row">
+        <button class="speed-btn" data-speed="0.75">0.75×</button>
+        <button class="speed-btn active" data-speed="1">1×</button>
+        <button class="speed-btn" data-speed="1.25">1.25×</button>
+        <button class="speed-btn" data-speed="1.5">1.5×</button>
+        <button class="speed-btn" data-speed="2">2×</button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════
+       VOICE MANAGEMENT SHEET
+  ════════════════════════════════════════════════════ -->
+  <div id="voice-sheet" class="bottom-sheet hidden">
+    <div class="sheet-backdrop" id="sheet-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Voice Profiles</h2>
+        <button class="btn-icon" id="btn-close-voices">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="sheet-body">
+        <p class="hint">Upload 30–60 s of clear WAV speech to clone a voice.</p>
+
+        <div class="voice-upload-row">
+          <input type="text" id="voice-name-input" class="text-input" placeholder="Voice name…" />
+          <label class="btn-pill btn-accent" for="upload-wav-input">Choose WAV</label>
+          <input type="file" id="upload-wav-input" accept=".wav" hidden />
+        </div>
+        <div id="wav-filename" class="wav-filename hidden"></div>
+        <button id="btn-save-voice" class="btn-pill btn-accent btn-full" disabled>Save Voice</button>
+
+        <div class="section-label" style="margin-top:20px">Saved Voices</div>
+        <div id="voices-list" class="card-list"></div>
+        <div id="voices-empty" class="empty-state hidden">
+          <p>No voices saved yet.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ═══════════════════════════════════════════════════
+       GLOBAL OVERLAYS
+  ════════════════════════════════════════════════════ -->
+  <div id="loading-overlay" class="loading-overlay hidden">
+    <div class="spinner"></div>
+    <p id="loading-msg">Processing…</p>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <!-- ═══════════════════════════════════════════════════
+       LOG SHEET
+  ════════════════════════════════════════════════════ -->
+  <div id="log-sheet" class="bottom-sheet hidden">
+    <div class="sheet-backdrop" id="log-backdrop"></div>
+    <div class="sheet-panel">
+      <div class="sheet-handle"></div>
+      <div class="sheet-header">
+        <h2>Server Log</h2>
+        <div class="sheet-header-actions">
+          <button type="button" class="btn-pill btn-accent btn-sm" id="btn-refresh-log">Refresh</button>
+          <button type="button" class="btn-icon" id="btn-close-log" title="Close log">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="sheet-body sheet-body-flush">
+        <pre id="log-content" class="log-content">Loading…</pre>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+
+</html>
