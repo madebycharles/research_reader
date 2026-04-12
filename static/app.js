@@ -294,10 +294,28 @@ let defaultVoiceId = null;
 // Batch preparation
 // ---------------------------------------------------------------------------
 const activePreparePolls = new Map(); // paperId → intervalId
+const notifyOnComplete   = new Set(); // paperIds to fire OS notification when ready
+const paperTitles        = new Map(); // paperId → title (for notification text)
 
 function stopPreparePolling(paperId) {
   const id = activePreparePolls.get(paperId);
   if (id) { clearInterval(id); activePreparePolls.delete(paperId); }
+}
+
+function requestNotifyPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function fireReadyNotification(paperId) {
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const title = paperTitles.get(paperId) || 'Paper';
+  const n = new Notification('Research Reader', {
+    body: `"${title}" is ready to listen.`,
+    tag: `ready-${paperId}`,
+  });
+  setTimeout(() => n.close(), 10000);
 }
 
 async function loadDefaultVoice() {
@@ -313,6 +331,10 @@ function renderPrepareUI(paperId, prepEl, s) {
   if (s.ready) {
     prepEl.innerHTML = `<span class="ready-badge">✓ Ready to listen</span>`;
     stopPreparePolling(paperId);
+    if (notifyOnComplete.has(paperId)) {
+      notifyOnComplete.delete(paperId);
+      fireReadyNotification(paperId);
+    }
     return;
   }
 
@@ -338,6 +360,8 @@ function renderPrepareUI(paperId, prepEl, s) {
       return;
     }
     try {
+      requestNotifyPermission();
+      notifyOnComplete.add(paperId);
       const res = await api.post(`/api/papers/${paperId}/prepare?voice_id=${defaultVoiceId}`);
       renderPrepareUI(paperId, prepEl, { status: 'running', done: res.already_done || 0, total: res.total, ready: false });
       toast('Preparing audio in the background…', '', 3000);
@@ -350,18 +374,22 @@ function renderPrepareUI(paperId, prepEl, s) {
       }, 10000);
       activePreparePolls.set(paperId, interval);
     } catch (err) {
+      notifyOnComplete.delete(paperId);
       toast(`Prepare failed: ${err.message}`, 'error');
     }
   });
 }
 
-async function checkInitialPrepareStatus(paperId, prepEl) {
+async function checkInitialPrepareStatus(paperId, prepEl, title) {
   if (!defaultVoiceId) return;
   try {
     const s = await api.get(`/api/papers/${paperId}/prepare/status?voice_id=${defaultVoiceId}`);
     renderPrepareUI(paperId, prepEl, s);
     // Resume polling if server says it's still running (e.g. after page refresh)
     if (s.status === 'running' && !activePreparePolls.has(paperId)) {
+      // Register for notification — job was already running when page loaded
+      requestNotifyPermission();
+      notifyOnComplete.add(paperId);
       const interval = setInterval(async () => {
         try {
           const st = await api.get(`/api/papers/${paperId}/prepare/status?voice_id=${defaultVoiceId}`);
@@ -423,6 +451,8 @@ function renderPapers(papers) {
         return;
       }
       try {
+        requestNotifyPermission();
+        notifyOnComplete.add(p.paper_id);
         const res = await api.post(`/api/papers/${p.paper_id}/prepare?voice_id=${defaultVoiceId}`);
         renderPrepareUI(p.paper_id, prepEl, { status: 'running', done: res.already_done || 0, total: res.total, ready: false });
         toast('Preparing audio in the background…', '', 3000);
@@ -435,6 +465,7 @@ function renderPapers(papers) {
         }, 10000);
         activePreparePolls.set(p.paper_id, interval);
       } catch (err) {
+        notifyOnComplete.delete(p.paper_id);
         toast(`Prepare failed: ${err.message}`, 'error');
       }
     });
@@ -457,8 +488,10 @@ function renderPapers(papers) {
 
     list.appendChild(card);
 
+    // Store title for use in ready notification
+    paperTitles.set(p.paper_id, p.title);
     // Check actual status from server (shows Ready badge / progress if already running)
-    checkInitialPrepareStatus(p.paper_id, prepEl);
+    checkInitialPrepareStatus(p.paper_id, prepEl, p.title);
   });
 }
 
