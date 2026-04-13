@@ -112,6 +112,19 @@ async def upload_paper(file: UploadFile = File(...)):
         for s in parsed.sections
     ]
 
+    # Log what the parser filtered out so it's visible in the log viewer
+    meta = parsed.metadata
+    log.info(
+        "PDF parsed — body font: %.1fpt | excluded: %d headers, %d footers, "
+        "%d publisher notes, %d affiliations, %d figure captions",
+        meta.get("body_font_size", 0),
+        len(meta.get("running_headers", [])),
+        len(meta.get("running_footers", [])),
+        len(meta.get("publisher_notes", [])),
+        len(meta.get("affiliations", [])),
+        len(meta.get("figure_captions", [])),
+    )
+
     with get_db() as db:
         db.execute(
             "INSERT INTO papers (id, title, filename, sections, created_at) "

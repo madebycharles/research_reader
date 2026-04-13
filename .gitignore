@@ -34,3 +34,7 @@ Thumbs.db
 # Env files
 .env
 *.env
+
+# Keys and credentials
+.runpodkey.txt
+.runpodkey.sh
