@@ -468,7 +468,10 @@ function renderPapers(papers) {
           <button class="prepare-btn">Prepare for listening</button>
         </div>
       </div>
-      <button class="paper-delete" data-id="${p.paper_id}" title="Delete">×</button>
+      <div class="paper-actions">
+        <button class="paper-reparse" data-id="${p.paper_id}" title="Re-parse with updated parser">↺</button>
+        <button class="paper-delete"  data-id="${p.paper_id}" title="Delete">×</button>
+      </div>
     `;
 
     const prepEl = card.querySelector('.paper-prepare');
@@ -501,8 +504,30 @@ function renderPapers(papers) {
     });
 
     card.addEventListener('click', (e) => {
-      if (e.target.closest('.paper-delete') || e.target.closest('.paper-prepare')) return;
+      if (e.target.closest('.paper-actions') || e.target.closest('.paper-prepare')) return;
       openPaper(p.paper_id);
+    });
+
+    card.querySelector('.paper-reparse').addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Re-parse "${p.title}"?\n\nThis clears cached audio and progress. You'll need to Prepare again.`)) return;
+      try {
+        stopPreparePolling(p.paper_id);
+        showLoading('Re-parsing…');
+        const res = await api.post(`/api/papers/${p.paper_id}/reparse`);
+        hideLoading();
+        const ex = res.excluded;
+        toast(
+          `Re-parsed: ${res.section_count} sections. ` +
+          `Filtered ${ex.running_headers + ex.running_footers} headers/footers, ` +
+          `${ex.publisher_notes} publisher notes, ${ex.figure_captions} captions.`,
+          'success', 6000
+        );
+        loadLibrary();
+      } catch (err) {
+        hideLoading();
+        toast(`Re-parse failed: ${err.message}`, 'error');
+      }
     });
 
     card.querySelector('.paper-delete').addEventListener('click', async (e) => {

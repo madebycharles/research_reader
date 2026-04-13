@@ -196,6 +196,74 @@ async def get_paper(paper_id: str):
     }
 
 
+@app.post("/api/papers/{paper_id}/reparse")
+async def reparse_paper(paper_id: str):
+    """Re-parse a paper's PDF with the current parser and update the DB.
+    Clears the audio cache since paragraph indices may shift."""
+    with get_db() as db:
+        row = db.execute(
+            "SELECT filename FROM papers WHERE id = ?", (paper_id,)
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Paper not found.")
+
+    pdf_path = PAPERS_DIR / f"{paper_id}.pdf"
+    if not pdf_path.exists():
+        raise HTTPException(404, "PDF file not found on disk.")
+
+    try:
+        loop   = asyncio.get_event_loop()
+        parsed = await loop.run_in_executor(None, parse_pdf, str(pdf_path))
+    except Exception as exc:
+        raise HTTPException(500, f"Re-parse failed: {exc}")
+
+    sections_data = [
+        {"title": s.title, "paragraphs": s.paragraphs}
+        for s in parsed.sections
+    ]
+
+    meta = parsed.metadata
+    log.info(
+        "Reparse %s — body font: %.1fpt | excluded: %d headers, %d footers, "
+        "%d publisher notes, %d affiliations, %d figure captions",
+        paper_id,
+        meta.get("body_font_size", 0),
+        len(meta.get("running_headers", [])),
+        len(meta.get("running_footers", [])),
+        len(meta.get("publisher_notes", [])),
+        len(meta.get("affiliations", [])),
+        len(meta.get("figure_captions", [])),
+    )
+
+    with get_db() as db:
+        db.execute(
+            "UPDATE papers SET title = ?, sections = ? WHERE id = ?",
+            (parsed.title, json.dumps(sections_data), paper_id),
+        )
+        # Clear playback progress — positions refer to old paragraph indices
+        db.execute("DELETE FROM progress WHERE paper_id = ?", (paper_id,))
+
+    # Clear audio cache — old files are indexed to old paragraph positions
+    cleared = 0
+    for f in AUDIO_DIR.glob(f"{paper_id}_*"):
+        f.unlink(missing_ok=True)
+        cleared += 1
+
+    return {
+        "paper_id":      paper_id,
+        "title":         parsed.title,
+        "section_count": len(sections_data),
+        "audio_cleared": cleared,
+        "excluded": {
+            "running_headers":  len(meta.get("running_headers", [])),
+            "running_footers":  len(meta.get("running_footers", [])),
+            "publisher_notes":  len(meta.get("publisher_notes", [])),
+            "affiliations":     len(meta.get("affiliations", [])),
+            "figure_captions":  len(meta.get("figure_captions", [])),
+        },
+    }
+
+
 @app.delete("/api/papers/{paper_id}")
 async def delete_paper(paper_id: str):
     with get_db() as db:
