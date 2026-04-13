@@ -16,14 +16,17 @@ Upload a PDF, clone a voice from a short WAV recording, and listen hands-free. A
 
 ## Features
 
-- **Intelligent PDF parsing** — detects two-column layouts and reads in correct order, fixes hyphenated line breaks, strips inline citations (`[1]`, `(Smith, 2023)`), replaces figure/table references with verbal equivalents
+- **Intelligent PDF parsing** — detects two-column layouts and reads in correct order; filters running page headers/footers, publisher footnotes (copyright, DOI, received/accepted dates), author affiliations, and figure/table captions using a three-layer detection pipeline (positional margins, cross-page repetition, pattern + font-size); fixes hyphenated line breaks; strips inline citations (`[1]`, `(Smith, 2023)`); replaces figure/table references with verbal equivalents
 - **Content processing for audio** — injects section announcements, expands acronyms on first use (e.g. `LLM` → _Large Language Model (LLM)_), normalises symbols and Greek letters for natural speech
-- **Voice cloning** — upload 30–60 seconds of clean WAV speech; Coqui XTTS v2 synthesises in that voice for all future papers
+- **Voice cloning** — upload 30–60 seconds of clean WAV speech; Coqui XTTS v2 synthesises in that voice for all future papers; speaker embedding computed once per voice and cached in memory for the duration of a prepare job
 - **Batch pre-generation** — generate all audio in the background before you start listening; fully cached, zero wait at playback time
+- **Ready notification** — browser push notification fires when a prepare job completes; works on Android Chrome automatically, on iOS requires Add to Home Screen
 - **Mobile player** — dark-mode UI with play/pause, paragraph skip, speed control (0.75×–2×), section navigator, and lock screen controls via the Media Session API
 - **Progress persistence** — resumes from where you left off per paper
 - **Audio caching** — generated WAV files are reused on replay; no regeneration cost
+- **Re-parse** — apply updated parser to already-uploaded papers without re-uploading; clears stale audio cache automatically
 - **Server log viewer** — in-app log panel showing full tracebacks for any errors
+- **Cloud GPU support** — deploy to RunPod (or any Linux GPU server) for 15–25× faster generation; GitHub → RunPod pipeline via `git pull` on startup
 
 ---
 
@@ -32,11 +35,12 @@ Upload a PDF, clone a voice from a short WAV recording, and listen hands-free. A
 | Layer               | Technology                                                               |
 | ------------------- | ------------------------------------------------------------------------ |
 | Backend             | Python 3.11, FastAPI, Uvicorn                                            |
-| PDF parsing         | PyMuPDF (fitz)                                                           |
+| PDF parsing         | PyMuPDF (fitz) — dict-mode extraction with per-span font size metadata   |
 | TTS / Voice cloning | Coqui XTTS v2 (`TTS` library)                                            |
 | Storage             | SQLite (papers, voices, progress) + local filesystem (audio, PDFs, WAVs) |
 | Frontend            | Vanilla HTML/CSS/JS, mobile-first, dark theme                            |
 | Remote access       | Tailscale (optional, for phone access away from home network)            |
+| Cloud GPU           | RunPod (optional) — RTX 3090/4090, network volume for persistence        |
 
 ---
 
@@ -70,7 +74,7 @@ py -3.11 --version
 
 ```
 cd c:\Projects
-git clone <repo-url> research_reader
+git clone https://github.com/madebycharles/research_reader
 cd research_reader
 ```
 
@@ -116,6 +120,47 @@ Your PC's Tailscale IP is shown in the Tailscale tray icon or at `tailscale ip -
 
 ---
 
+## Cloud GPU deployment (RunPod)
+
+For significantly faster audio generation (15–25× vs CPU), deploy to a RunPod GPU pod.
+
+### One-time setup
+
+1. Create a RunPod account and deploy a GPU pod (RTX 3090 recommended)
+   - Attach a **network volume** (~25 GB) mounted at `/workspace` — persists between pod restarts
+   - Expose port **8000** as an HTTP port
+2. Open JupyterLab from the pod dashboard
+3. In the terminal:
+
+```bash
+bash /workspace/setup_runpod.sh https://github.com/madebycharles/research_reader.git
+```
+
+This clones the repo, creates a venv on the network volume, and installs all dependencies with CUDA support.
+
+### Starting the server (every session)
+
+```bash
+bash /workspace/research_reader/run_runpod.sh
+```
+
+This pulls the latest code from GitHub, activates the venv, and starts the server. Access via the RunPod HTTP proxy URL for port 8000.
+
+### GitHub → RunPod pipeline
+
+Any change committed and pushed to GitHub is automatically applied on the next pod startup — `run_runpod.sh` runs `git pull` before starting the server. No manual file uploads needed.
+
+### Cost
+
+| Resource | Price |
+| -------- | ----- |
+| RTX 3090 pod (on-demand) | ~$0.30–0.50 / hr |
+| Network volume (25 GB) | ~$1.75 / month |
+
+Spin the pod up to prepare papers, then terminate it. Data on the network volume (papers, voices, generated audio, venv, XTTS model cache) persists between sessions.
+
+---
+
 ## Usage
 
 ### First-time setup
@@ -132,6 +177,15 @@ Your PC's Tailscale IP is shown in the Tailscale tray icon or at `tailscale ip -
 3. Tap **Prepare** — audio is generated for every paragraph in the background
 4. When the progress bar reaches 100% (or the **Ready** badge appears), open the paper
 5. Select your voice, tap play
+
+### Ready notifications
+
+- **Android / desktop Chrome** — tap Prepare and allow notifications when prompted; a push notification fires when the job finishes
+- **iPhone** — tap Share → Add to Home Screen to install as a PWA first; then tap the 🔔 bell in the progress bar to enable notifications
+
+### Re-parsing existing papers
+
+If you update the parser, tap the **↺** button on any paper card to re-parse it with the current parser. Cached audio is cleared automatically (paragraph indices may shift); you'll need to Prepare again after re-parsing.
 
 ### Player controls
 
@@ -169,25 +223,46 @@ Audio is cached per voice — switching voice on a paper that was already prepar
 
 ```
 research_reader/
-├── main.py           — FastAPI app: all routes, batch prepare logic, logging
-├── pdf_parser.py     — PDF parsing: column detection, dehyphenation, section extraction
-├── processor.py      — Text processing: acronym expansion, symbol normalisation, TTS chunking
-├── tts_engine.py     — Coqui XTTS v2 wrapper: lazy load, thread lock, torch.load patch
-├── database.py       — SQLite: papers, voices, progress tables
-├── requirements.txt  — Pinned dependencies
-├── setup.bat         — One-time setup script (Windows)
-├── run.bat           — Start server (Windows)
+├── main.py              — FastAPI app: all routes, batch prepare, reparse, logging
+├── pdf_parser.py        — PDF parsing: 3-layer header/footer filtering, column detection,
+│                          dehyphenation, citation stripping, section extraction
+├── processor.py         — Text processing: acronym expansion, symbol normalisation, TTS chunking
+├── tts_engine.py        — Coqui XTTS v2 wrapper: lazy load, speaker embedding cache,
+│                          thread lock, torch.load patch
+├── database.py          — SQLite: papers, voices, progress tables
+├── requirements.txt     — Pinned dependencies
+├── setup.bat            — One-time setup script (Windows)
+├── run.bat              — Start server (Windows)
+├── setup_runpod.sh      — One-time setup script (RunPod / Linux GPU)
+├── run_runpod.sh        — Start server on RunPod (pulls latest code from GitHub)
 ├── static/
-│   ├── index.html    — Mobile UI (two screens: library + reader)
-│   ├── style.css     — Dark theme, mobile-first layout
-│   └── app.js        — Player engine, library, voice management, log viewer
-└── data/             — Runtime data (gitignored)
-    ├── papers/       — Uploaded PDFs
-    ├── voices/       — Voice WAV samples
-    ├── audio/        — Generated audio chunks (cached)
-    ├── reader.db     — SQLite database
-    └── reader.log    — Server log
+│   ├── index.html       — Mobile UI (library + reader screens)
+│   ├── style.css        — Dark theme, mobile-first layout
+│   └── app.js           — Player engine, library, voice management, notifications, log viewer
+└── data/                — Runtime data (gitignored)
+    ├── papers/          — Uploaded PDFs
+    ├── voices/          — Voice WAV samples
+    ├── audio/           — Generated audio chunks (cached)
+    ├── reader.db        — SQLite database
+    └── reader.log       — Server log
 ```
+
+---
+
+## PDF parsing pipeline
+
+The parser operates in five passes over the raw PDF blocks:
+
+1. **Block extraction** — uses PyMuPDF's dict-mode (`get_text("dict")`) to capture each text block with bounding box and per-span font size data
+2. **Body font estimation** — computes the mode font size among substantial blocks; used as a baseline for small-text detection
+3. **Rule-based classification** — labels each block as one of: `body`, `running_header`, `running_footer`, `publisher_note`, `affiliation`, or `figure_caption` based on:
+   - Vertical position (top 7% / bottom 7% of page → header/footer candidate)
+   - Pattern matching (copyright, DOI, received/accepted dates, emails, figure caption prefixes)
+   - Font size relative to body (< 80% of body size + affiliation keywords → affiliation; small text in bottom 20% → publisher note)
+4. **Cross-page repetition** — text normalised (digits replaced with `#`) appearing on 2+ pages in margin zones is confirmed as a running header or footer, catching journal names and page numbers that sit slightly outside the strict margin threshold
+5. **Column-aware ordering** — body blocks are sorted top-to-bottom within each page, with left-column-first ordering applied for detected two-column layouts
+
+Excluded content is collected in `ParsedPaper.metadata` and logged at upload/reparse time but never passed to TTS.
 
 ---
 
@@ -195,12 +270,13 @@ research_reader/
 
 ### Papers
 
-| Method   | Endpoint             | Description                                |
-| -------- | -------------------- | ------------------------------------------ |
-| `POST`   | `/api/papers/upload` | Upload a PDF (multipart)                   |
-| `GET`    | `/api/papers`        | List all papers                            |
-| `GET`    | `/api/papers/{id}`   | Get paper with full section/paragraph data |
-| `DELETE` | `/api/papers/{id}`   | Delete paper and its cached audio          |
+| Method   | Endpoint                    | Description                                     |
+| -------- | --------------------------- | ----------------------------------------------- |
+| `POST`   | `/api/papers/upload`        | Upload a PDF (multipart)                        |
+| `GET`    | `/api/papers`               | List all papers                                 |
+| `GET`    | `/api/papers/{id}`          | Get paper with full section/paragraph data      |
+| `POST`   | `/api/papers/{id}/reparse`  | Re-parse stored PDF; clears audio cache         |
+| `DELETE` | `/api/papers/{id}`          | Delete paper and its cached audio               |
 
 ### Voices
 
