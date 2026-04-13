@@ -35,6 +35,10 @@ Thumbs.db
 .env
 *.env
 
-# Keys and credentials
-*.runpodkey.txt
-*.runpodkey.sh
+# Keys and credentials — never commit these
+runpodkey.txt
+*.txt.pub
+*.pem
+*.key
+id_rsa*
+id_ed25519*
