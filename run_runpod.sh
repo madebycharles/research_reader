@@ -1,16 +1,32 @@
 #!/bin/bash
 # Research Reader — RunPod start script
-# Run from the project directory after setup_runpod.sh has been run.
+# Pulls latest code from GitHub then starts the server.
 #
 # Usage:
-#   cd /workspace/research_reader
-#   bash run_runpod.sh
+#   bash /workspace/research_reader/run_runpod.sh
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+set -e
+
+PROJECT_DIR="/workspace/research_reader"
 cd "$PROJECT_DIR"
 
+# Keep the XTTS model cache on the network volume so it survives pod termination.
+export XDG_DATA_HOME="/workspace/.cache"
+mkdir -p "/workspace/.cache"
+
+# ── Pull latest code from GitHub ─────────────────────────────────────────────
+echo "=== Pulling latest code... ==="
+if git pull --ff-only 2>&1; then
+  echo "Code up to date."
+else
+  echo "WARNING: git pull failed (local changes or conflict). Running existing code."
+fi
+
+# ── Activate venv ─────────────────────────────────────────────────────────────
 source venv/bin/activate
 
+# ── Show device ───────────────────────────────────────────────────────────────
+echo ""
 echo "=== Research Reader ==="
 python - <<'EOF'
 import torch
@@ -20,6 +36,7 @@ else:
     print("Device : CPU (no CUDA)")
 EOF
 
+# ── Start server ──────────────────────────────────────────────────────────────
 PORT=${PORT:-8000}
 echo "Starting server on 0.0.0.0:${PORT} ..."
 echo ""

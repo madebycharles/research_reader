@@ -1,18 +1,37 @@
 #!/bin/bash
 # Research Reader — RunPod one-time setup
-# Run this once after uploading the project to /workspace/research_reader/
-# Network volume must be mounted at /workspace (persists between sessions).
+# Network volume must be mounted at /workspace.
 #
 # Usage:
-#   cd /workspace/research_reader
-#   bash setup_runpod.sh
+#   bash /workspace/setup_runpod.sh https://github.com/your-user/research_reader.git
+#
+# Or if already cloned:
+#   cd /workspace/research_reader && bash setup_runpod.sh
 
 set -e
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_URL="${1:-}"
+PROJECT_DIR="/workspace/research_reader"
+
 echo "=== Research Reader — RunPod Setup ==="
-echo "Project dir: $PROJECT_DIR"
+
+# ── 0. Clone repo if not already present ────────────────────────────────────
+if [ ! -d "$PROJECT_DIR/.git" ]; then
+  if [ -z "$REPO_URL" ]; then
+    echo "ERROR: Project not found at $PROJECT_DIR and no GitHub URL provided."
+    echo "Usage: bash setup_runpod.sh https://github.com/your-user/research_reader.git"
+    exit 1
+  fi
+  echo "[0/5] Cloning repo..."
+  git clone "$REPO_URL" "$PROJECT_DIR"
+fi
+
 cd "$PROJECT_DIR"
+echo "Project dir: $PROJECT_DIR"
+
+# Point Coqui TTS model cache to network volume so it persists between pods
+export XDG_DATA_HOME="/workspace/.cache"
+mkdir -p "/workspace/.cache"
 
 # ── 1. Data directories on network volume ───────────────────────────────────
 echo ""
@@ -59,4 +78,4 @@ echo ""
 echo "The XTTS v2 model (~2 GB) downloads automatically on first voice test."
 echo ""
 echo "Start the server with:"
-echo "  bash run_runpod.sh"
+echo "  bash /workspace/research_reader/run_runpod.sh"
