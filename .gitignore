@@ -36,5 +36,5 @@ Thumbs.db
 *.env
 
 # Keys and credentials
-.runpodkey.txt
-.runpodkey.sh
+*.runpodkey.txt
+*.runpodkey.sh
