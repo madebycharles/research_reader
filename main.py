@@ -277,7 +277,9 @@ async def delete_voice(voice_id: str):
             raise HTTPException(404, "Voice not found.")
         db.execute("DELETE FROM voices WHERE id = ?", (voice_id,))
 
-    (VOICES_DIR / f"{voice_id}.wav").unlink(missing_ok=True)
+    wav_path = VOICES_DIR / f"{voice_id}.wav"
+    engine.clear_speaker_cache(str(wav_path))
+    wav_path.unlink(missing_ok=True)
     return {"message": "Voice deleted."}
 
 
