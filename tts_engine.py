@@ -42,14 +42,9 @@ class TTSEngine:
             print(f"[TTS] Loading XTTS v2 on {self._device} "
                   f"(first run downloads ~2 GB — please wait)...")
 
-            self._tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2",
-                            gpu=(self._device == "cuda"))
-
-            # TTS(gpu=True) doesn't reliably move all XTTS components to CUDA
-            # when using the lower-level inference API directly. Explicitly move
-            # the model to the correct device to guarantee GPU inference.
-            if self._device == "cuda":
-                self._tts.synthesizer.tts_model.cuda()
+            self._tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2")
+            # `gpu` parameter is deprecated — use .to(device) instead
+            self._tts.to(self._device)
 
             self._loaded = True
             actual = next(self._tts.synthesizer.tts_model.parameters()).device
