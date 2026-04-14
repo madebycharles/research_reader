@@ -38,6 +38,6 @@ EOF
 
 # ── Start server ──────────────────────────────────────────────────────────────
 PORT=${PORT:-8000}
-echo "Starting server on 0.0.0.0:${PORT} ..."
+echo "Starting TTS worker on 0.0.0.0:${PORT} ..."
 echo ""
-python -m uvicorn main:app --host 0.0.0.0 --port "${PORT}"
+python -m uvicorn worker:app --host 0.0.0.0 --port "${PORT}"

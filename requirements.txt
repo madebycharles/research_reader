@@ -8,6 +8,7 @@ python-multipart>=0.0.9
 PyMuPDF>=1.23.0
 aiofiles>=23.2.1
 pydantic>=2.5.0
+requests>=2.31.0
 
 # spaCy must be pinned <3.8 before TTS is installed.
 # spaCy 3.8+ requires thinc>=8.3.12 which does not exist on PyPI

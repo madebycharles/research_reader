@@ -5,6 +5,7 @@ Research Reader — FastAPI backend
 import asyncio
 import json
 import logging
+import os
 import shutil
 import threading
 import traceback
@@ -13,6 +14,8 @@ from datetime import datetime
 from functools import partial
 from pathlib import Path
 from typing import List
+
+import requests
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -66,6 +69,59 @@ DATA_DIR   = Path("data")
 PAPERS_DIR = DATA_DIR / "papers"
 VOICES_DIR = DATA_DIR / "voices"
 AUDIO_DIR  = DATA_DIR / "audio"
+
+# ---------------------------------------------------------------------------
+# Remote TTS worker (RunPod)
+# Set RUNPOD_WORKER_URL to the worker's proxy URL to offload generation.
+# Leave unset to use the local XTTS engine instead.
+# e.g. export RUNPOD_WORKER_URL=https://<pod-id>-8000.proxy.runpod.net
+# ---------------------------------------------------------------------------
+RUNPOD_WORKER_URL = os.getenv("RUNPOD_WORKER_URL", "").rstrip("/")
+
+# Track which voices have been uploaded to the worker this process session
+# so we don't re-upload on every prepare job.
+_worker_voices_uploaded: set = set()
+
+
+def _ensure_voice_on_worker(voice_id: str) -> None:
+    """Upload voice WAV to the remote worker if not already done this session."""
+    if voice_id in _worker_voices_uploaded:
+        return
+    wav_path = VOICES_DIR / f"{voice_id}.wav"
+    if not wav_path.exists():
+        raise FileNotFoundError(f"Voice WAV not found: {wav_path}")
+    with open(wav_path, "rb") as f:
+        resp = requests.post(
+            f"{RUNPOD_WORKER_URL}/voice",
+            data={"voice_id": voice_id},
+            files={"file": (wav_path.name, f, "audio/wav")},
+            timeout=30,
+        )
+    resp.raise_for_status()
+    _worker_voices_uploaded.add(voice_id)
+    log.info("Voice %s uploaded to remote worker.", voice_id)
+
+
+def _remote_generate(text: str, voice_id: str, out_path: Path) -> None:
+    """Send a text chunk to the remote worker and save the returned WAV locally.
+    If the worker has restarted and lost its voice cache, re-uploads and retries once."""
+    resp = requests.post(
+        f"{RUNPOD_WORKER_URL}/generate",
+        json={"text": text, "voice_id": voice_id},
+        timeout=120,
+    )
+    if resp.status_code == 400 and "not uploaded" in resp.text:
+        # Worker was restarted — voice cache is gone. Re-upload and retry once.
+        log.warning("Worker lost voice cache for %s — re-uploading.", voice_id)
+        _worker_voices_uploaded.discard(voice_id)
+        _ensure_voice_on_worker(voice_id)
+        resp = requests.post(
+            f"{RUNPOD_WORKER_URL}/generate",
+            json={"text": text, "voice_id": voice_id},
+            timeout=120,
+        )
+    resp.raise_for_status()
+    out_path.write_bytes(resp.content)
 
 
 @app.on_event("startup")
@@ -508,9 +564,21 @@ def _count_generated(paper_id: str, voice_id: str, sections: list) -> tuple:
 
 
 def _prepare_worker(job_key: str, paper_id: str, voice_id: str, sections: list):
-    job = _prepare_jobs[job_key]
+    job      = _prepare_jobs[job_key]
     wav_path = VOICES_DIR / f"{voice_id}.wav"
+    remote   = bool(RUNPOD_WORKER_URL)
     acronym_seen: set = set()
+
+    if remote:
+        log.info("Prepare %s — using remote worker at %s", paper_id, RUNPOD_WORKER_URL)
+        try:
+            _ensure_voice_on_worker(voice_id)
+        except Exception as exc:
+            log.error("Failed to upload voice to remote worker: %s", exc, exc_info=True)
+            job["status"] = "error"
+            return
+    else:
+        log.info("Prepare %s — using local TTS engine", paper_id)
 
     for si, section in enumerate(sections):
         if is_boilerplate(section["title"]):
@@ -526,7 +594,10 @@ def _prepare_worker(job_key: str, paper_id: str, voice_id: str, sections: list):
                 out = AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}_{i:04d}.wav"
                 if not out.exists():
                     try:
-                        tts_engine.generate(chunk, str(wav_path), str(out))
+                        if remote:
+                            _remote_generate(chunk, voice_id, out)
+                        else:
+                            tts_engine.generate(chunk, str(wav_path), str(out))
                     except Exception as exc:
                         job["errors"] += 1
                         log.error("Prepare %s §%d¶%d: %s", paper_id, si, pi, exc, exc_info=True)
