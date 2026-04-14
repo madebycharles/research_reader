@@ -44,8 +44,16 @@ class TTSEngine:
 
             self._tts = TTS("tts_models/multilingual/multi-dataset/xtts_v2",
                             gpu=(self._device == "cuda"))
+
+            # TTS(gpu=True) doesn't reliably move all XTTS components to CUDA
+            # when using the lower-level inference API directly. Explicitly move
+            # the model to the correct device to guarantee GPU inference.
+            if self._device == "cuda":
+                self._tts.synthesizer.tts_model.cuda()
+
             self._loaded = True
-            print(f"[TTS] Model ready on {self._device}.")
+            actual = next(self._tts.synthesizer.tts_model.parameters()).device
+            print(f"[TTS] Model ready — confirmed on {actual}.")
         finally:
             torch.load = _orig_load  # always restore, even on failure
 
@@ -54,12 +62,20 @@ class TTSEngine:
 
         Computed once per unique WAV path and held in memory for the lifetime
         of the process — avoids re-processing the speaker WAV on every paragraph.
+        Tensors are explicitly moved to the model's device so inference stays on GPU.
         """
         if speaker_wav not in self._speaker_cache:
+            import torch
             xtts = self._tts.synthesizer.tts_model
-            latents = xtts.get_conditioning_latents(audio_path=[speaker_wav])
-            self._speaker_cache[speaker_wav] = latents
-            print(f"[TTS] Speaker latents cached for {Path(speaker_wav).name}")
+            gpt_cond_latent, speaker_embedding = xtts.get_conditioning_latents(
+                audio_path=[speaker_wav]
+            )
+            if self._device == "cuda":
+                gpt_cond_latent   = gpt_cond_latent.cuda()
+                speaker_embedding = speaker_embedding.cuda()
+            self._speaker_cache[speaker_wav] = (gpt_cond_latent, speaker_embedding)
+            print(f"[TTS] Speaker latents cached for {Path(speaker_wav).name} "
+                  f"on {gpt_cond_latent.device}")
         return self._speaker_cache[speaker_wav]
 
     def generate(self, text: str, speaker_wav: str, output_path: str,
