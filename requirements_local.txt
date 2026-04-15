@@ -9,3 +9,5 @@ PyMuPDF>=1.23.0
 aiofiles>=23.2.1
 pydantic>=2.5.0
 requests>=2.31.0
+numpy>=1.24.0
+soundfile>=0.12.1

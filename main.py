@@ -15,7 +15,9 @@ from functools import partial
 from pathlib import Path
 from typing import List
 
+import numpy as np
 import requests
+import soundfile as sf
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -470,28 +472,28 @@ async def generate_tts(
 
     wav_path = VOICES_DIR / f"{voice_id}.wav"
     prefix   = f"{paper_id}_{voice_id}_{section_idx}_{paragraph_idx}"
+    out_path = AUDIO_DIR / f"{prefix}.wav"
 
-    # Generate each chunk (skip if cached)
-    audio_urls: List[str] = []
     loop = asyncio.get_event_loop()
 
-    for i, chunk in enumerate(chunks):
-        out_path = AUDIO_DIR / f"{prefix}_{i:04d}.wav"
-
-        if not out_path.exists():
-            try:
+    if not out_path.exists():
+        temp_files: List[Path] = []
+        try:
+            for i, chunk in enumerate(chunks):
+                tmp = AUDIO_DIR / f"{prefix}_tmp{i}.wav"
                 await loop.run_in_executor(
                     None,
-                    partial(tts_engine.generate, chunk, str(wav_path), str(out_path)),
+                    partial(tts_engine.generate, chunk, str(wav_path), str(tmp)),
                 )
-            except Exception as exc:
-                raise HTTPException(500, f"TTS failed on chunk {i}: {exc}")
-
-        audio_urls.append(f"/audio/{out_path.name}")
+                temp_files.append(tmp)
+            _merge_wav_files(temp_files, out_path)
+        except Exception as exc:
+            for f in temp_files:
+                f.unlink(missing_ok=True)
+            raise HTTPException(500, f"TTS failed: {exc}")
 
     return {
-        "audio_urls":    audio_urls,
-        "chunk_count":   len(audio_urls),
+        "audio_url":     f"/audio/{out_path.name}",
         "section_title": section["title"],
         "paragraph_idx": paragraph_idx,
     }
@@ -546,6 +548,27 @@ async def status():
 # Batch preparation (pre-generate all audio before listening)
 # ---------------------------------------------------------------------------
 
+def _merge_wav_files(temp_paths: list, out_path: Path) -> None:
+    """Concatenate WAV temp files into a single output file, then delete temps.
+
+    All XTTS output is 24 kHz mono float32; concatenation is a straight numpy
+    join — no re-encoding needed.
+    """
+    if len(temp_paths) == 1:
+        temp_paths[0].rename(out_path)
+        return
+    arrays: list = []
+    samplerate = 24000
+    for p in temp_paths:
+        data, sr = sf.read(str(p))
+        arrays.append(data)
+        samplerate = sr
+    merged = np.concatenate(arrays)
+    sf.write(str(out_path), merged, samplerate)
+    for p in temp_paths:
+        p.unlink(missing_ok=True)
+
+
 # In-memory job tracker — resets on server restart, filesystem is source of truth
 _prepare_jobs: dict = {}
 
@@ -558,7 +581,7 @@ def _count_generated(paper_id: str, voice_id: str, sections: list) -> tuple:
             continue
         for pi in range(len(section["paragraphs"])):
             total += 1
-            if (AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}_0000.wav").exists():
+            if (AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}.wav").exists():
                 generated += 1
     return generated, total
 
@@ -590,17 +613,23 @@ def _prepare_worker(job_key: str, paper_id: str, voice_id: str, sections: list):
                 break
             prepared = prepare_for_tts(section["title"], paragraph, pi == 0, acronym_seen)
             chunks   = chunk_text(prepared)
-            for i, chunk in enumerate(chunks):
-                out = AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}_{i:04d}.wav"
-                if not out.exists():
-                    try:
+            out = AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}.wav"
+            if not out.exists():
+                temp_files: list = []
+                try:
+                    for i, chunk in enumerate(chunks):
+                        tmp = AUDIO_DIR / f"{paper_id}_{voice_id}_{si}_{pi}_tmp{i}.wav"
                         if remote:
-                            _remote_generate(chunk, voice_id, out)
+                            _remote_generate(chunk, voice_id, tmp)
                         else:
-                            tts_engine.generate(chunk, str(wav_path), str(out))
-                    except Exception as exc:
-                        job["errors"] += 1
-                        log.error("Prepare %s §%d¶%d: %s", paper_id, si, pi, exc, exc_info=True)
+                            tts_engine.generate(chunk, str(wav_path), str(tmp))
+                        temp_files.append(tmp)
+                    _merge_wav_files(temp_files, out)
+                except Exception as exc:
+                    job["errors"] += 1
+                    log.error("Prepare %s §%d¶%d: %s", paper_id, si, pi, exc, exc_info=True)
+                    for f in temp_files:
+                        f.unlink(missing_ok=True)
             job["done"] += 1
 
     job["status"] = "cancelled" if job.get("cancelled") else "done"

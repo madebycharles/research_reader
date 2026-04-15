@@ -72,8 +72,6 @@ function showScreen(id) {
 class Player {
   constructor() {
     this.audio = new Audio();
-    this.queue  = [];        // audio URLs for current paragraph
-    this.qIdx   = 0;         // index within queue
 
     this.paperId      = null;
     this.voiceId      = null;
@@ -83,8 +81,8 @@ class Player {
     this.playing      = false;
     this.speed        = 1.0;
 
-    this.audio.addEventListener('ended',  () => this._onChunkEnded());
-    this.audio.addEventListener('error',  () => this._onAudioError());
+    this.audio.addEventListener('ended',   () => this._onParagraphEnded());
+    this.audio.addEventListener('error',   () => this._onAudioError());
     this.audio.addEventListener('playing', () => this._setStatus('Playing', 'playing'));
     this.audio.addEventListener('waiting', () => this._setStatus('Buffering…', 'loading'));
   }
@@ -96,7 +94,6 @@ class Player {
     this.sectionIdx   = sectionIdx;
     this.paragraphIdx = paragraphIdx;
     this.playing      = false;
-    this.queue        = [];
     this._updateUI();
   }
 
@@ -126,7 +123,6 @@ class Player {
       this.paragraphIdx = 0;
     }
     this.audio.pause();
-    this.queue = [];
     this._updateUI();
     if (this.playing) await this._generateAndPlay(this.sectionIdx, this.paragraphIdx);
   }
@@ -139,7 +135,6 @@ class Player {
       this.paragraphIdx = this.sections[this.sectionIdx].paragraph_count - 1;
     }
     this.audio.pause();
-    this.queue = [];
     this._updateUI();
     if (this.playing) await this._generateAndPlay(this.sectionIdx, this.paragraphIdx);
   }
@@ -148,7 +143,6 @@ class Player {
     this.sectionIdx   = sectionIdx;
     this.paragraphIdx = paragraphIdx;
     this.audio.pause();
-    this.queue = [];
     this._updateUI();
     if (this.playing) await this._generateAndPlay(this.sectionIdx, this.paragraphIdx);
   }
@@ -168,9 +162,9 @@ class Player {
     try {
       const params = new URLSearchParams({ paper_id: this.paperId, voice_id: this.voiceId, section_idx: si, paragraph_idx: pi });
       const data = await api.post(`/api/tts/generate?${params}`);
-      this.queue = data.audio_urls;
-      this.qIdx  = 0;
-      this._playNextChunk();
+      this.audio.src = data.audio_url;
+      this.audio.playbackRate = this.speed;
+      this.audio.play().catch(() => {});
       this._saveProgress();
       this._prefetchNext(si, pi);
     } catch (err) {
@@ -179,22 +173,6 @@ class Player {
       this.playing = false;
       this._updatePlayBtn();
     }
-  }
-
-  _playNextChunk() {
-    if (this.qIdx >= this.queue.length) {
-      this._onParagraphEnded();
-      return;
-    }
-    const url = this.queue[this.qIdx++];
-    this.audio.src = url;
-    this.audio.playbackRate = this.speed;
-    this.audio.play().catch(() => {});
-  }
-
-  _onChunkEnded() {
-    if (!this.playing) return;
-    this._playNextChunk();
   }
 
   async _onParagraphEnded() {
@@ -221,8 +199,7 @@ class Player {
 
   _onAudioError() {
     if (!this.playing) return;
-    // Skip bad chunk and continue
-    this._playNextChunk();
+    this._onParagraphEnded();
   }
 
   async _prefetchNext(si, pi) {
